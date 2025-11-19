@@ -1,4 +1,4 @@
-from pretraining.pretrain_model import ClassifierConvNet
+from model import ClassifierConvNet
 import torch.nn as nn
 import torch.optim as optim
 import torch
