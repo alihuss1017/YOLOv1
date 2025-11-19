@@ -2,6 +2,16 @@ import torch
 from torch.utils.data import Dataset, Subset, random_split, DataLoader
 
 class BuildLoaders:
+    '''
+    Builds training and validation loaders
+    
+    Inputs:
+        dataset: Dataset
+        batch_size: int
+        subset_size: int | None = None
+        train_split: float = 0.7
+        val_split: float = 0.3
+    '''
     def __init__(self, dataset: Dataset, batch_size: int, subset_size: int | None = None,
                  train_split: float = 0.7, val_split: float = 0.3):
         
@@ -17,11 +27,11 @@ class BuildLoaders:
             self.dataset = Subset(self.dataset, indices)
     
     def run(self):
-        '''builds training and validation dataloaders.'''
+        '''builds and returns training and validation dataloaders.'''
         self._apply_subset()
         train_data, val_data = random_split(self.dataset, [self.train_split, self.val_split])
-        train_loader = DataLoader(train_data, self.batch_size, drop_last = True)
-        val_loader = DataLoader(val_data, self.batch_size, drop_last = True)
+        train_loader = DataLoader(train_data, self.batch_size, shuffle = True, drop_last = True)
+        val_loader = DataLoader(val_data, self.batch_size, shuffle = True, drop_last = True)
 
         return train_loader, val_loader
 
