@@ -2,6 +2,7 @@ from pretraining.pretrain_model import ClassifierConvNet
 import torch.nn as nn
 import torch.optim as optim
 import torch
+import os
 
 class PreTrainer:
 
@@ -26,6 +27,7 @@ class PreTrainer:
         Runs training algorithm. Prints loss per epoch.
         
         Inputs:
+            num_epochs: int
             train_loader: DataLoader
         '''
 
@@ -60,6 +62,7 @@ class PreTrainer:
 
         correct = 0
         total = 0
+        val_loss = 0
 
         self.model.eval()
         with torch.no_grad():
@@ -71,10 +74,14 @@ class PreTrainer:
                 correct += (preds == y).sum().item()
                 total += len(y)
 
-            print(f'Accuracy: {correct / total}%')
+                loss = self.loss_fn(preds, y)
+                val_loss += loss.item()
+
+            print(f'Accuracy: {(correct / total) * 100}% \t Validation Loss: {val_loss / len(val_loader)}')
         
     def save_model(self) -> None:
         '''saves pretrained classifier to pretrained_model.pt'''
         
-        torch.save(self.model.state_dict(), 'pretraining/pretrained_model.pt')
-        print("Saved pretrained classifier model to pretrained_model.pt")
+        os.makedirs('models/pretrained_model.pt', exist_ok = True)
+        torch.save(self.model.state_dict(), 'models/pretrained_model.pt')
+        print("Saved pretrained classifier model to models/pretrained_model.pt")
