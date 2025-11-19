@@ -4,6 +4,13 @@ from torchvision.ops.boxes import box_iou
 import torch.nn.functional as F
 
 class YOLOLoss(nn.Module):
+    '''
+    Computes entire YOLO Loss term.
+    
+    Inputs in forward pass:
+        predictions: torch.Tensor (batch_size, S, S, (B * 5 + C))
+        labels: torch.Tensor (batch_size, 5)
+    '''
     def __init__(self):
         super().__init__()
         self.lambda_coord = 5
@@ -38,8 +45,8 @@ class YOLOLoss(nn.Module):
         probs_hat = predicted_cells[:, 10: ]
 
         # compute bounding boxes for confidence comparison
-        x1, y1, w1, h1 = predicted_cells[:, :4]
-        x2, y2, w2, h2 = predicted_cells[:, 5:9]
+        x1, y1, w1, h1 = predicted_cells[:, :4].transpose(0, 1)
+        x2, y2, w2, h2 = predicted_cells[:, 5:9].transpose(0, 1)
 
         # to compute our predictions bounding boxes, we first need to find x_hat_center, y_hat_center. 
         x_hat_center1, y_hat_center1 = (x1 + c_j) / 7, (y1+ c_i) / 7
@@ -60,7 +67,10 @@ class YOLOLoss(nn.Module):
 
         # now we can get our predicted values for loss function. each var is of shape (64, )
         x_hat_c, y_hat_c, w_hat, h_hat, conf_hat = selected_box_params.transpose(0, 1)
-        
+
+        w_hat = torch.clamp(w_hat, min=1e-6)
+        h_hat = torch.clamp(h_hat, min=1e-6)
+
         return x_hat_c, y_hat_c, w_hat, h_hat, conf_hat, probs_hat
 
     def _get_cell_coords(self, labels: torch.Tensor, c_j: torch.Tensor, 
@@ -88,9 +98,15 @@ class YOLOLoss(nn.Module):
         x_min, x_max = x_center - (w/2), x_center + (w/2)
         y_min, y_max = y_center - (h/2), y_center + (h/2)
 
+        x_min = torch.min(x_min, x_max)
+        x_max = torch.max(x_min, x_max)
+        y_min = torch.min(y_min, y_max)
+        y_max = torch.max(y_min, y_max)
+
         # we unsqueeze our tensor to be of shape (64, 1) to later concatenate
         x_min, x_max = x_min.unsqueeze(1), x_max.unsqueeze(1)
         y_min, y_max = y_min.unsqueeze(1), y_max.unsqueeze(1)
+
 
         # we concatenate along columns to get tensor of shape (64, 4)
         bounding_box = torch.concat([x_min, y_min, x_max, y_max], dim = -1)
@@ -112,8 +128,8 @@ class YOLOLoss(nn.Module):
         # (batch_size, 98)
         confidence_scores = box_params[..., 4]
 
-        x1, y1, w1, h1 = predicted_cells[:, :4]
-        x2, y2, w2, h2 = predicted_cells[:, 5:9]
+        x1, y1, w1, h1 = predicted_cells[:, :4].transpose(0, 1)
+        x2, y2, w2, h2 = predicted_cells[:, 5:9].transpose(0, 1)
 
         # to compute our predictions bounding boxes, we first need to find x_hat_center, y_hat_center. 
         x_hat_center1, y_hat_center1 = (x1 + c_j) / 7, (y1+ c_i) / 7
@@ -154,7 +170,7 @@ class YOLOLoss(nn.Module):
         class_idx, x_center, y_center, w, h = labels[:, ].transpose(0, 1)
 
         # generate one-hot encoded gt class probs (64, 200)
-        encoded_class_labels = F.one_hot(class_idx, num_classes = 200)
+        encoded_class_labels = F.one_hot(class_idx.to(torch.long), num_classes = 200)
 
         # retrieve grid cell indices
         c_i, c_j = self._get_ground_truth_cell_index(labels)
@@ -183,7 +199,7 @@ class YOLOLoss(nn.Module):
         box_params = predictions[..., :10]
 
         # generate predicted noobj confidence tensor
-        noobj_confidence_hat = self._get_noobj_pred_confidence(box_params,
+        noobj_confidence_hat = self._get_noobj_pred_confidence(box_params, gt_bound_box,
                                                                predicted_cells, c_i, c_j,
                                                                batch_size)
         
@@ -211,6 +227,7 @@ class YOLOLoss(nn.Module):
 
         # compute class-conditional loss
         class_prob_loss = self.loss_fn(encoded_class_labels, probs_hat)
-
-        # return total loss
+        
         return positional_loss + conf_loss + class_prob_loss
+    
+ 
