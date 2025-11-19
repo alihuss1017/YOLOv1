@@ -10,10 +10,10 @@ class YOLOLoss(nn.Module):
         self.lambda_noobj = 0.5
         self.loss_fn = nn.MSELoss()
 
-    def _get_predicted_grid_cell(self, labels: torch.Tensor):
+    def _get_ground_truth_cell_index(self, labels: torch.Tensor):
 
         '''
-        Returns predicted cell (i, j).
+        Returns cell index (i, j).
         input: torch.Tensor of shape (64, )
         outputs: torch.Tensor, torch.Tensor of shape (64, )
         '''
@@ -25,23 +25,34 @@ class YOLOLoss(nn.Module):
 
         return c_i, c_j
     
-    def _get_predicted_box_params(self, predicted_cells: torch.Tensor):
+    def _get_predicted_box_params(self, predicted_cells: torch.Tensor, 
+                                  gt_bound_box: torch.Tensor, c_j: torch.Tensor,
+                                  c_i: torch.Tensor):
 
         '''
         Returns the responsible box's parameters (x, y, w, h, confidence). 
         Also returns the predicted grid cell's class probabilities.
         '''
 
-        # conf1, conf2 represent the confidence scores of bounding box 1 and 2 respectively. 
-        conf1 = predicted_cells[:, 4]
-        conf2 = predicted_cells[:, 9]
-
         # this is our predicted class-conditional probabilities
         probs_hat = predicted_cells[:, 10: ]
 
-        # this is our mask; True/1 if box 1's confidence is greater than box 2's, else False/0.
-        conf_mask = conf2 > conf1 
+        # compute bounding boxes for confidence comparison
+        x1, y1, w1, h1 = predicted_cells[:, :4]
+        x2, y2, w2, h2 = predicted_cells[:, 5:9]
 
+        # to compute our predictions bounding boxes, we first need to find x_hat_center, y_hat_center. 
+        x_hat_center1, y_hat_center1 = (x1 + c_j) / 7, (y1+ c_i) / 7
+        pred_bound_box1 = self._get_bounding_box(x_hat_center1, y_hat_center1, w1, h1)
+
+        x_hat_center2, y_hat_center2 = (x2 + c_j) / 7, (y2+ c_i) / 7
+        pred_bound_box2 = self._get_bounding_box(x_hat_center2, y_hat_center2, w2, h2)
+
+        iou1 = torch.diag(box_iou(pred_bound_box1, gt_bound_box))
+        iou2 = torch.diag(box_iou(pred_bound_box2, gt_bound_box))
+
+        # this is our mask; True/1 if box 2's iou is greater than iou 1's, else False/0.
+        conf_mask = iou2 > iou1 
         
         # we apply our mask; if true, then we take predicted_cells[:, 5:10] else 
         # predicted_cells[:, 0:5]. the shape will be (64, 5)
@@ -86,7 +97,7 @@ class YOLOLoss(nn.Module):
 
         return bounding_box
 
-    def _get_noobj_pred_confidence(self, box_params: torch.Tensor,
+    def _get_noobj_pred_confidence(self, box_params: torch.Tensor, gt_bound_box: torch.Tensor,
                                predicted_cells: torch.Tensor, c_i: torch.Tensor,
                                c_j: torch.Tensor, batch_size: int):
 
@@ -94,24 +105,31 @@ class YOLOLoss(nn.Module):
         Returns the no-object predicted confidence scores, filtering out the scores 
         of the predicted grid cells. 
         '''
+        
         box_params = box_params.view(batch_size, 7, 7, 2, 5)
         box_params = box_params.contiguous().view(batch_size, 98, 5)
 
         # (batch_size, 98)
         confidence_scores = box_params[..., 4]
 
-        # conf1, conf2 represent the confidence scores of bounding box 1 and 2 respectively. 
-        conf1 = predicted_cells[:, 4]
-        conf2 = predicted_cells[:, 9]
+        x1, y1, w1, h1 = predicted_cells[:, :4]
+        x2, y2, w2, h2 = predicted_cells[:, 5:9]
 
-        # this is our mask; True/1 if box 1's confidence is greater than box 2's, else False/0.
-        conf_mask = conf2 > conf1 
+        # to compute our predictions bounding boxes, we first need to find x_hat_center, y_hat_center. 
+        x_hat_center1, y_hat_center1 = (x1 + c_j) / 7, (y1+ c_i) / 7
+        pred_bound_box1 = self._get_bounding_box(x_hat_center1, y_hat_center1, w1, h1)
 
-        # cast as integer for later mathematical operation
-        conf_int_mask = conf_mask.to(torch.int32)
+        x_hat_center2, y_hat_center2 = (x2 + c_j) / 7, (y2+ c_i) / 7
+        pred_bound_box2 = self._get_bounding_box(x_hat_center2, y_hat_center2, w2, h2)
+
+        iou1 = torch.diag(box_iou(pred_bound_box1, gt_bound_box))
+        iou2 = torch.diag(box_iou(pred_bound_box2, gt_bound_box))
+
+        # this is our mask; True/1 if box 2's iou is greater than iou 1's, else False/0.
+        conf_mask = (iou2 > iou1).to(torch.int32)
 
         # this (batch_size, ) shaped tensor contains all indices to filter out. 
-        no_obj_mask = (c_i * 14 + c_j * 2 + (conf_int_mask))
+        no_obj_mask = (c_i * 14 + c_j * 2 + (conf_mask))
 
         # (98, ) shaped tensor containing all flattened indices for masking purposes
         indices = torch.arange(confidence_scores.shape[1]).unsqueeze(0).expand(batch_size, -1)
@@ -139,20 +157,22 @@ class YOLOLoss(nn.Module):
         encoded_class_labels = F.one_hot(class_idx, num_classes = 200)
 
         # retrieve grid cell indices
-        c_i, c_j = self._get_predicted_grid_cell(labels)
+        c_i, c_j = self._get_ground_truth_cell_index(labels)
 
         # retrieve grid cell coords
         x_c, y_c = self._get_cell_coords(labels, c_j, c_i)
+
+        # ground truth bounding box
+        gt_bound_box = self._get_bounding_box(x_center, y_center, w, h)
 
         # this will give us the predicted cell from each batch item. the predicted cell is (210, )
         predicted_cells = predictions[torch.arange(batch_size), c_i, c_j, :] # (64, 210)
 
         # all predicted params
-        x_hat_c, y_hat_c, w_hat, h_hat, conf_hat, probs_hat = self._get_predicted_box_params(predicted_cells)
-
-        # ground truth bounding box
-        gt_bound_box = self._get_bounding_box(x_center, y_center, w, h)
-
+        x_hat_c, y_hat_c, w_hat, h_hat, conf_hat, probs_hat = self._get_predicted_box_params(predicted_cells,
+                                                                                             gt_bound_box,
+                                                                                             c_j, c_i)
+        
         # to compute our predictions bounding box, we first need to find x_hat_center, y_hat_center. 
         x_hat_center, y_hat_center = (x_hat_c + c_j) / 7, (y_hat_c + c_i) / 7
         pred_bound_box = self._get_bounding_box(x_hat_center, y_hat_center, w_hat, h_hat)
@@ -174,7 +194,8 @@ class YOLOLoss(nn.Module):
         coord_loss = self.loss_fn(x_c, x_hat_c) + self.loss_fn(y_c, y_hat_c)
 
         # compute second term in loss equation (w, h)
-        area_loss = self.loss_fn(w, w_hat) + self.loss_fn(h, h_hat)
+        area_loss = self.loss_fn(torch.sqrt(w), torch.sqrt(w_hat)) + (
+            self.loss_fn(torch.sqrt(h), torch.sqrt(h_hat)))
 
         # sum first and second term together with scaling factor lambda_coord
         positional_loss = self.lambda_coord * (coord_loss + area_loss)
@@ -189,7 +210,7 @@ class YOLOLoss(nn.Module):
         conf_loss = obj_conf_loss + noobj_conf_loss
 
         # compute class-conditional loss
-        class_prob_loss = nn.MSELoss(encoded_class_labels, probs_hat)
+        class_prob_loss = self.loss_fn(encoded_class_labels, probs_hat)
 
         # return total loss
         return positional_loss + conf_loss + class_prob_loss
