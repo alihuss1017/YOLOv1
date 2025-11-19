@@ -1,10 +1,9 @@
-from pretraining import PreTrainDataset, ClassifierConvNet, BuildLoaders
-import torch
+from pretrain import PreTrainDataset, ClassifierConvNet, BuildLoaders
 
 batch_size = 64
 num_classes = 200
 subset_size = 5000
-dataset = PreTrainDataset('tiny-imagenet-200')
+dataset = PreTrainDataset('tiny-imagenet-200/train')
 builder = BuildLoaders(dataset, batch_size, subset_size)
 convNet = ClassifierConvNet(num_classes)
 
