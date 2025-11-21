@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from torchvision.ops.boxes import box_iou
 
 def convert_center_to_cell_coords(x_center: torch.Tensor, 
@@ -19,9 +18,9 @@ def convert_center_to_cell_coords(x_center: torch.Tensor,
     '''
     
     # finds cell index (i, j)
-    c_i, c_j = (y_center / 7).to(torch.int32), (x_center / 7).to(torch.int32)
+    c_i, c_j = (y_center * 7).to(torch.int32), (x_center * 7).to(torch.int32)
 
-    x_c, y_c = (x_center / 7) - c_j, (y_center / 7) - c_i
+    x_c, y_c = (x_center * 7) - c_j, (y_center * 7) - c_i
 
     return c_i, c_j, x_c, y_c
 
@@ -89,13 +88,15 @@ def compute_no_obj_confidence(c_i, c_j, mask, preds):
         gt_no_obj_confs, pred_no_obj_confs
     '''
 
+    B = preds.shape[0]
+
     pred_confs = preds[:, :, :, 4:10:5] # (64, 7, 7, 2)
-    pred_confs = pred_confs.view(-1, 49, 2).contiguous().view(-1, 98) # (64, 98)
+    pred_confs = pred_confs.reshape(B, 7 * 7 * 2)
 
     int_mask = mask.to(torch.int32)
 
     # compute flattened index of responsible box within predicted cell to filter out 
-    best_indices = (c_j * 14 + c_i * 2 + (int_mask)).unsqueeze(1) # (64, 1)
+    best_indices = (c_i * 14 + c_j * 2 + (int_mask)).unsqueeze(1) # (64, 1)
     indices = torch.arange(pred_confs.shape[-1]).expand(pred_confs.shape[0], -1) # (64, 98)
 
     filter_mask = best_indices != indices # (64, 98)
