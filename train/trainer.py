@@ -1,4 +1,5 @@
 import torch
+import os
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -68,7 +69,8 @@ class Trainer:
             
             print(f'Validation Loss: {val_loss / len(val_loader)}')
 
-    def save_model(self):
+    def save_model(self, path: str):
         '''saves pretrained classifier to pretrained_model.pt'''
-        torch.save(self.model.state_dict(), 'model.pt')
-        print('Saved detection model to model.pt')
+        os.makedirs(f'{path}', exist_ok = True)
+        torch.save(self.model.state_dict(), f'{path}/model.pt')
+        print(f'Saved detection model to {path}/model.pt')

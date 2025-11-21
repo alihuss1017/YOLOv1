@@ -79,9 +79,9 @@ class PreTrainer:
 
             print(f'Accuracy: {(correct / total) * 100}% \t Validation Loss: {val_loss / len(val_loader)}')
         
-    def save_model(self) -> None:
+    def save_model(self, path: str) -> None:
         '''saves pretrained classifier to pretrained_model.pt'''
         
-        os.makedirs('models/pretrained_model.pt', exist_ok = True)
-        torch.save(self.model.state_dict(), 'models/pretrained_model.pt')
-        print("Saved pretrained classifier model to models/pretrained_model.pt")
+        os.makedirs(f'{path}', exist_ok = True)
+        torch.save(self.model.state_dict(), f'{path}/pretrained_model.pt')
+        print(f"Saved pretrained classifier model to {path}pretrained_model.pt")
