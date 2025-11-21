@@ -3,7 +3,7 @@ import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from train.model import DetectionConvNet
-from utils.loss import YOLOLoss
+from train.loss import YOLOLoss
 
 class Trainer:
 
