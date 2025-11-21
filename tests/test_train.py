@@ -1,7 +1,6 @@
 from train import BuildTrainDataset, DetectionConvNet, Trainer, BuildLoaders
 from pretrain import ClassifierConvNet
-from utils.loss import YOLOLoss
-import torch
+from train.loss import YOLOLoss
 
 batch_size = 64
 num_classes = 200
