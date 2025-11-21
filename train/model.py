@@ -27,7 +27,8 @@ class DetectionConvNet(nn.Module):
             nn.Flatten(start_dim = 1, end_dim = -1),
             nn.Linear(7 * 7 * 1024, 4096),
             nn.LeakyReLU(0.1),
-            nn.Linear(4096, 7 * 7 * 210)
+            nn.Linear(4096, 7 * 7 * 210),
+            nn.Sigmoid(),
         )
         # ----------------------------------------------------------- #
 
